@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "ccv": {
-      "command": "node",
-      "args": ["/workspace/ccv/bin/ccv.mjs"]
+      "command": "npx",
+      "args": ["-y", "github:AnEntrypoint/ccv"]
     }
   }
 }
