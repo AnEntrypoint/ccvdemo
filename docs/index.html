@@ -102,6 +102,10 @@
     <input id="text" autocomplete="off" placeholder="type, then hear it">
     <button type="submit">speak</button>
   </form>
+  <form id="ask">
+    <input id="prompt" autocomplete="off" placeholder="ask, and read the reply">
+    <button type="submit">ask</button>
+  </form>
   <div id="note"></div>
 </main>
 <script>
@@ -204,6 +208,52 @@ function stopHearing() {
 }
 
 canvas.addEventListener('click', () => { hearing ? stopHearing() : startHearing(); });
+
+const PROXY = 'https://wranger.almagestfraternite.workers.dev/?url=';
+const chatUrl = PROXY + encodeURIComponent('https://chatjimmy.ai/api/chat');
+let asking = false;
+
+document.getElementById('ask').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const field = document.getElementById('prompt');
+  const text = field.value.trim();
+  if (!text || asking) return;
+  asking = true;
+  field.value = '';
+  setState('asking');
+  target = 0.5;
+  caption.textContent = '';
+  const payload = {
+    id: crypto.randomUUID(),
+    messages: [{ id: crypto.randomUUID(), role: 'user', content: text }],
+    chatOptions: { selectedModel: 'llama3.1-8B', systemPrompt: '', topK: 1 },
+    attachment: null
+  };
+  try {
+    const res = await fetch(chatUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = '';
+    const sentinel = '<|stats|>';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      pending += decoder.decode(value, { stream: true });
+      const cut = pending.indexOf(sentinel);
+      const visible = cut === -1 ? pending.slice(0, Math.max(0, pending.length - (sentinel.length - 1))) : pending.slice(0, cut);
+      caption.textContent = visible;
+      if (cut !== -1) break;
+    }
+    note.textContent = '';
+  } catch (err) {
+    note.textContent = err.message;
+  } finally {
+    asking = false;
+    target = hearing ? 0.35 : 0.04;
+    setState(hearing ? 'listening' : 'idle');
+  }
+});
 
 document.getElementById('say').addEventListener('submit', (e) => {
   e.preventDefault();
