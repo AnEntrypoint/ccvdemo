@@ -1,2 +1,7 @@
 .env
 .ccv/
+.discord/
+.bak/
+.gm/
+.agentplug-kv/
+discord-runner/node_modules/
