@@ -18,7 +18,9 @@ audio bridge over WebRig's audio WebSocket, so the WebRig instance keeps owning 
 and the voice connection.
 
 1. Start WebRig with its Discord bot configured (`DISCORD_BOT_TOKEN`, `GUILD_ID`, `CHANNEL_ID`)
-   and its audio WebSocket listening (`WS_AUDIO_PORT`, default 9888).
+   and its audio WebSocket listening (`WS_AUDIO_PORT`, default 9888). The browser extensions are
+   audio *clients*: in browser-extension mode the socket is served by
+   `node companion/index.js` (`npm run companion`), not by the extension itself.
 2. Run `node webrig-runner/index.mjs` (or `npm start` inside `webrig-runner/`). It loads the same
    ccv speech models, follows `.webrig/heard.jsonl`, and starts `chatjimmy-bridge.mjs` against it.
 3. Replies are synthesized with ccv's TTS and sent back to WebRig as stereo Float32 AUDIO frames;

@@ -17,3 +17,5 @@ with RNNoise voice activity, transcribes each utterance with ccv's STT, and appe
 `heard.jsonl` records `chatjimmy-bridge.mjs` reads. `/speak` on `WEBRIG_SPEAK_PORT` (default 8802)
 synthesizes a reply with ccv's TTS and sends it back to WebRig as framed AUDIO. `WEBRIG_HOME`
 (default `.webrig/`) holds `heard.jsonl`; `WEBRIG_BRIDGE=0` disables the chatjimmy child process.
+The runner needs WebRig's 9888 audio server: the Electron host (`npm start`) or, for the browser
+extensions, `npm run companion` — an extension alone does not listen.

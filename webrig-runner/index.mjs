@@ -13,6 +13,7 @@
 //   bytes 8..   interleaved stereo Float32 PCM at 48 kHz
 import { appendFile, mkdir } from 'node:fs/promises'
 import http from 'node:http'
+import net from 'node:net'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -187,13 +188,44 @@ function frameMessage(type, payload) {
 
 let ws = null
 let recvBuf = Buffer.alloc(0)
+let lastProblemLogAt = 0
+
+function describeClose(event) {
+  if (event?.code === 1006) return 'connection closed abnormally'
+  if (!event?.code) return 'connection closed'
+  return `code ${event.code}${event.reason ? `: ${event.reason}` : ''}`
+}
+
+function probe(host, port, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port })
+    const finish = (text) => { socket.destroy(); resolve(text) }
+    socket.setTimeout(timeoutMs, () => finish('no response from the port'))
+    socket.once('connect', () => finish('the port is open but the WebSocket handshake failed'))
+    socket.once('error', (err) => finish(err.code ?? err.message))
+  })
+}
+
+function explainUnreachable() {
+  const now = Date.now()
+  if (now - lastProblemLogAt < 10000) return
+  lastProblemLogAt = now
+  const url = new URL(wsUrl)
+  const port = Number(url.port || (url.protocol === 'wss:' ? 443 : 80))
+  probe(url.hostname, port).then((cause) => {
+    log(`cannot reach WebRig audio at ${wsUrl}: ${cause} — retrying in 2s; start WebRig's audio server first (Electron host, or "npm run companion" for browser-extension mode)`)
+  })
+}
 
 function connect() {
   const socket = new WebSocket(wsUrl)
   socket.binaryType = 'arraybuffer'
+  let opened = false
   socket.onopen = () => {
+    opened = true
     ws = socket
     recvBuf = Buffer.alloc(0)
+    lastProblemLogAt = 0
     log(`connected to ${wsUrl}`)
   }
   socket.onmessage = (event) => {
@@ -207,11 +239,14 @@ function connect() {
       if (type === MSG_AUDIO) feed(payload)
     }
   }
-  socket.onerror = () => {}
-  socket.onclose = () => {
+  socket.onerror = () => {
+    if (!opened) explainUnreachable()
+  }
+  socket.onclose = (event) => {
     if (ws === socket) ws = null
     resetCapture()
-    log(`disconnected from ${wsUrl}, retrying`)
+    if (opened) log(`disconnected from ${wsUrl} (${describeClose(event)}), reconnecting`)
+    else explainUnreachable()
     setTimeout(connect, 2000)
   }
 }
@@ -273,4 +308,5 @@ const shutdown = () => {
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
+log(`waiting for WebRig audio at ${wsUrl}`)
 connect()
