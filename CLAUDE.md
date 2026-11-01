@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # Voice demo
 
 This project runs the ccv voice stack through its MCP server.
