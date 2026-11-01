@@ -18,7 +18,7 @@ import { loadStt, transcribePcm16k } from 'ccv/src/stt.mjs';
 import { loadParadee, synthesizeStream } from 'ccv/src/tts.mjs';
 import { modelDir } from 'ccv/src/install.mjs';
 import { createDenoiser } from 'ccv/src/denoise.mjs';
-import { prosody, describeProsody } from 'ccv/src/prosody.mjs';
+import { prosody, toneWords } from 'ccv/src/prosody.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -35,6 +35,8 @@ const heardPath = path.join(discordHome, 'heard.jsonl');
 const endSilenceMs = Number(process.env.DISCORD_END_SILENCE_MS ?? 400);
 const minSpeechMs = 250;
 const heardKeep = 50;
+const TONE_HISTORY = 20;
+const toneHistory = new Map();
 
 const problem = !token ? 'DISCORD_TOKEN is not set' : !voiceChannelId ? 'DISCORD_CHANNEL is not set' : null;
 await mkdir(discordHome, { recursive: true });
@@ -141,7 +143,7 @@ function handOut(utterance) {
 function notifyHeard(utterance) {
   server.server.notification({
     method: 'notifications/claude/channel',
-    params: { content: utterance.text, meta: { from: utterance.from, at: String(utterance.at), prosody: describeProsody(utterance.prosody) } },
+    params: { content: utterance.text, meta: { from: utterance.from, at: String(utterance.at), tone: utterance.tone } },
   }).catch((err) => log(`channel notify failed: ${err.message}`));
 }
 
@@ -159,7 +161,10 @@ async function onSpeechEnd(userId, stereo) {
   const transcript = (await pendingTranscript).trim();
   if (!transcript) return;
   log(`[${from}] heard: ${transcript}`);
-  const utterance = { seq: ++state.seq, at, from, text: transcript, prosody: acoustics };
+  const past = toneHistory.get(userId) ?? [];
+  const tone = toneWords(acoustics, past);
+  toneHistory.set(userId, [...past, acoustics].slice(-TONE_HISTORY));
+  const utterance = { seq: ++state.seq, at, from, text: transcript, tone, prosody: acoustics };
   state.heard.push(utterance);
   if (state.heard.length > heardKeep) state.heard.shift();
   wakeListeners(utterance);
@@ -239,7 +244,7 @@ const server = new McpServer(
   { name: 'discord', version: '0.1.0' },
   {
     capabilities: { logging: {}, experimental: { 'claude/channel': {} } },
-    instructions: 'Utterances arrive as <channel source="discord"> events. Reply with discord_speak, or make no tool call when quiet. Never call discord_listen while channel events arrive; it is only for sessions where none arrive, and blocks until someone speaks. Each event\'s prosody attribute gives loudness, pitch, pitch spread and voiced share for tone; never quote it.',
+    instructions: 'Utterances arrive as <channel source="discord"> events. Reply with discord_speak, or make no tool call when quiet. Never call discord_listen while they arrive. tone says how it was said versus that speaker\'s usual; use it, never quote it.',
   },
 );
 
