@@ -17,7 +17,7 @@ env_value() {
 [ -n "${DISCORD_CHANNEL:-}" ] || [ -n "$(env_value DISCORD_CHANNEL)" ] \
   || { echo "start-discord: DISCORD_CHANNEL is not set in the environment or .env" >&2; exit 1; }
 
-if [ ! -d discord-runner/node_modules/discord.js ]; then
+if [ ! -d discord-runner/node_modules/discord.js ] || [ ! -d discord-runner/node_modules/ccv ]; then
   (cd discord-runner && npm install)
 fi
 if [ ! -d .ccv/models/stt ]; then

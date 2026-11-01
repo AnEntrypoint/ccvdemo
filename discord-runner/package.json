@@ -10,6 +10,7 @@
     "@discordjs/voice": "^0.19.2",
     "@jitsi/rnnoise-wasm": "^0.2.1",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "ccv": "github:AnEntrypoint/ccv",
     "discord.js": "^14.27.0",
     "libsodium-wrappers": "^0.8.4",
     "opusscript": "^0.0.8",

@@ -17,11 +17,11 @@ import net from 'node:net'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loadDotEnv } from '/workspace/ccv/src/env.mjs'
-import { loadStt, transcribePcm16k } from '/workspace/ccv/src/stt.mjs'
-import { loadParadee, synthesize } from '/workspace/ccv/src/tts.mjs'
-import { modelDir } from '/workspace/ccv/src/install.mjs'
-import { createDenoiser, DENOISE_FRAME } from '/workspace/ccv/src/denoise.mjs'
+import { loadDotEnv } from 'ccv/src/env.mjs'
+import { loadStt, transcribePcm16k } from 'ccv/src/stt.mjs'
+import { loadParadee, synthesize } from 'ccv/src/tts.mjs'
+import { modelDir } from 'ccv/src/install.mjs'
+import { createDenoiser, DENOISE_FRAME } from 'ccv/src/denoise.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.dirname(here)

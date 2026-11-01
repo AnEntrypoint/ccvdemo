@@ -13,11 +13,11 @@ import prism from 'prism-media';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { loadDotEnv } from '/workspace/ccv/src/env.mjs';
-import { loadStt, transcribePcm16k } from '/workspace/ccv/src/stt.mjs';
-import { loadParadee, synthesizeStream } from '/workspace/ccv/src/tts.mjs';
-import { modelDir } from '/workspace/ccv/src/install.mjs';
-import { createDenoiser } from '/workspace/ccv/src/denoise.mjs';
+import { loadDotEnv } from 'ccv/src/env.mjs';
+import { loadStt, transcribePcm16k } from 'ccv/src/stt.mjs';
+import { loadParadee, synthesizeStream } from 'ccv/src/tts.mjs';
+import { modelDir } from 'ccv/src/install.mjs';
+import { createDenoiser } from 'ccv/src/denoise.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);

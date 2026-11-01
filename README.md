@@ -7,6 +7,7 @@ Example Claude Code project that uses [ccv](https://github.com/AnEntrypoint/ccv)
 1. Launch this directory with `npx -y --package github:AnEntrypoint/ccv ccv-claude`. That wrapper starts Claude Code with `--dangerously-load-development-channels server:ccv`, which is what makes speech arrive on its own; plain `claude` still works, but the session has to call `voice_listen` to be woken by speech. Either way `.mcp.json` loads and starts `npx -y github:AnEntrypoint/ccv`.
 2. Optional: copy `.env.example` to `.env` and set `HF_TOKEN` for faster model downloads.
 3. Ask Claude to run `voice_setup`, then `voice_start`, then open http://127.0.0.1:8800/ and click join.
+4. For the chatjimmy scripts (`start.mjs`, `chatjimmy-bridge.mjs`), run `npm install` in this directory once.
 
 Models and LiveKit install into `.ccv/` in this directory (git-ignored).
 
@@ -25,7 +26,7 @@ and the voice connection.
    and its audio WebSocket listening (`WS_AUDIO_PORT`, default 9888). The browser extensions are
    audio *clients*: in browser-extension mode the socket is served by
    `node companion/index.js` (`npm run companion`), not by the extension itself.
-2. Run `node webrig-runner/index.mjs` (or `npm start` inside `webrig-runner/`). It loads the same
+2. Run `npm install` inside `webrig-runner/` once, then `node webrig-runner/index.mjs` (or `npm start` there). It loads the same
    ccv speech models, follows `.webrig/heard.jsonl`, and starts `chatjimmy-bridge.mjs` against it.
 3. Replies are synthesized with ccv's TTS and sent back to WebRig as stereo Float32 AUDIO frames;
    WebRig plays them into the voice channel.

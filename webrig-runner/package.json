@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node index.mjs"
   },
+  "dependencies": {
+    "ccv": "github:AnEntrypoint/ccv"
+  },
   "engines": {
     "node": ">=22"
   }

@@ -1,0 +1,14 @@
+{
+  "name": "ccvdemo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node start.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "ccv": "github:AnEntrypoint/ccv",
+    "cj": "github:AnEntrypoint/cj"
+  }
+}

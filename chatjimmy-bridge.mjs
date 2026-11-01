@@ -6,7 +6,7 @@
 // own speaker (during playback, or echoing the last reply) is dropped so the bot does not answer itself.
 import { open, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { createChatClient } from '/workspace/ccvcj/src/client.mjs';
+import { createChatClient } from 'cj/src/client.mjs';
 
 const home = process.env.CCV_HOME ?? path.join(path.dirname(new URL(import.meta.url).pathname), '.ccv');
 const heardPath = path.join(home, 'heard.jsonl');

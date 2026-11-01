@@ -5,14 +5,15 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Client } from '/workspace/ccv/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from '/workspace/ccv/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const ccvBin = fileURLToPath(import.meta.resolve('ccv/bin/ccv.mjs'));
 
 const transport = new StdioClientTransport({
   command: process.execPath,
-  args: ['/workspace/ccv/bin/ccv.mjs'],
+  args: [ccvBin],
   cwd: here,
   stderr: 'inherit',
 });
