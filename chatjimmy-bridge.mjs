@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Answers ccv utterances with chatjimmy as the inference, instead of a Claude session over MCP.
-// Follows <CCV_HOME>/heard.jsonl. Utterances are batched until 3 s of silence, then sent to the local
+// Follows <CCV_HOME>/heard.jsonl. Utterances are batched per speech end, then sent to the local
 // cj client as one transcript: the recent conversation, both the room's lines and the bot's own,
 // followed by the new lines. A reply of "..." means stay quiet. Anything the room picks up from our
 // own speaker (during playback, or echoing the last reply) is dropped so the bot does not answer itself.
@@ -12,7 +12,6 @@ const home = process.env.CCV_HOME ?? path.join(path.dirname(new URL(import.meta.
 const heardPath = path.join(home, 'heard.jsonl');
 const hostUrl = process.env.CCV_HOST_URL ?? 'http://127.0.0.1:8800';
 const pollMs = 250;
-const silenceMs = Number(process.env.CJ_SILENCE_MS ?? 0);
 const tailMs = 2000;
 const historyBudgetChars = Number(process.env.CJ_HISTORY_CHARS ?? 2500);
 const quiet = '...';
@@ -74,7 +73,7 @@ const trimTranscript = () => {
 };
 
 // The playback echo window only matters when our own speaker can reach our mic (the LiveKit room).
-// Discord does not send a bot its own audio, so its runner turns the window off.
+// WebRig's runner turns the window off (CJ_ECHO_WINDOW=0).
 const echoWindow = process.env.CJ_ECHO_WINDOW !== '0';
 let speakingUntil = 0;
 let lastReply = '';
@@ -122,7 +121,7 @@ let timer = null;
 let busy = false;
 
 // Speech that ended but whose transcript has not arrived yet. Holds the reply briefly so the
-// transcript lands in the same batch. Entries expire so a silent (empty) transcript cannot block forever.
+// transcript lands in the same batch. Entries expire so a transcript that never arrives cannot block forever.
 const pendingStt = [];
 const sttGraceMs = 2000;
 const hasPendingStt = () => {
@@ -173,7 +172,7 @@ const respond = async () => {
 };
 
 let timerArmed = false;
-const schedule = (ms = silenceMs) => {
+const schedule = (ms = 0) => {
   clearTimeout(timer);
   timerArmed = true;
   timer = setTimeout(() => { timerArmed = false; respond(); }, ms);
@@ -210,5 +209,5 @@ const poll = async () => {
   }
 };
 
-console.log(`chatjimmy bridge: model ${model}, ${silenceMs} ms silence window, following ${heardPath}, speaking via ${hostUrl}`);
+console.log(`chatjimmy bridge: model ${model}, following ${heardPath}, speaking via ${hostUrl}`);
 setInterval(() => { poll().catch((err) => console.error(`bridge: ${err.message}`)); }, pollMs);
