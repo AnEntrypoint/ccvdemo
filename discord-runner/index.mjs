@@ -19,6 +19,7 @@ import { loadParadee, synthesizeStream } from 'ccv/src/tts.mjs';
 import { modelDir } from 'ccv/src/install.mjs';
 import { createDenoiser } from 'ccv/src/denoise.mjs';
 import { prosody, toneWords } from 'ccv/src/prosody.mjs';
+import { createUtteranceJoiner } from './utterance-join.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -37,6 +38,8 @@ const minSpeechMs = 250;
 const heardKeep = 50;
 const TONE_HISTORY = 20;
 const toneHistory = new Map();
+// How long a fragment that does not end a sentence waits for the same speaker's continuation.
+const JOIN_HOLD_MS = Number(process.env.DISCORD_JOIN_MS ?? 1000);
 
 const problem = !token ? 'DISCORD_TOKEN is not set' : !voiceChannelId ? 'DISCORD_CHANNEL is not set' : null;
 await mkdir(discordHome, { recursive: true });
@@ -139,13 +142,39 @@ function handOut(utterance) {
   return textResult(JSON.stringify(utterance));
 }
 
-// Pushes an utterance into the Claude session as a channel event. Clients without the channel flag ignore it.
+// Pushes an utterance into the Claude session as a channel event. The tone leads the text, so it shows in the terminal
+// as well as reaching the session. Clients without the channel flag ignore it.
 function notifyHeard(utterance) {
   server.server.notification({
     method: 'notifications/claude/channel',
-    params: { content: utterance.text, meta: { from: utterance.from, at: String(utterance.at), tone: utterance.tone } },
+    params: { content: `[${utterance.tone}] ${utterance.text}`, meta: { from: utterance.from, at: String(utterance.at) } },
   }).catch((err) => log(`channel notify failed: ${err.message}`));
 }
+
+// Concatenates 16 kHz PCM pieces, so a joined utterance gets its prosody over the whole audio.
+const joinPcm = (pieces) => {
+  const out = new Int16Array(pieces.reduce((n, p) => n + p.length, 0));
+  let off = 0;
+  for (const p of pieces) { out.set(p, off); off += p.length; }
+  return out;
+};
+
+// Publishes one whole utterance built from a speaker's joined fragments.
+function publishUtterance(userId, parts) {
+  const text = parts.map((p) => p.text).join(' ');
+  const acoustics = prosody(joinPcm(parts.map((p) => p.pcm)));
+  const past = toneHistory.get(userId) ?? [];
+  const tone = toneWords(acoustics, past);
+  toneHistory.set(userId, [...past, acoustics].slice(-TONE_HISTORY));
+  const utterance = { seq: ++state.seq, at: parts[0].at, from: parts[0].from, text, tone, prosody: acoustics };
+  state.heard.push(utterance);
+  if (state.heard.length > heardKeep) state.heard.shift();
+  wakeListeners(utterance);
+  notifyHeard(utterance);
+  appendFile(heardPath, `${JSON.stringify(utterance)}\n`).catch((err) => log(`heard write failed: ${err.message}`));
+}
+
+const joiner = createUtteranceJoiner({ holdMs: JOIN_HOLD_MS, onFlush: publishUtterance });
 
 async function onSpeechEnd(userId, stereo) {
   const at = Date.now();
@@ -157,19 +186,10 @@ async function onSpeechEnd(userId, stereo) {
   }
   const sttPcm = toSttPcm(voiced);
   const pendingTranscript = transcribe(sttPcm);
-  const acoustics = prosody(sttPcm);
   const transcript = (await pendingTranscript).trim();
   if (!transcript) return;
   log(`[${from}] heard: ${transcript}`);
-  const past = toneHistory.get(userId) ?? [];
-  const tone = toneWords(acoustics, past);
-  toneHistory.set(userId, [...past, acoustics].slice(-TONE_HISTORY));
-  const utterance = { seq: ++state.seq, at, from, text: transcript, tone, prosody: acoustics };
-  state.heard.push(utterance);
-  if (state.heard.length > heardKeep) state.heard.shift();
-  wakeListeners(utterance);
-  notifyHeard(utterance);
-  await appendFile(heardPath, `${JSON.stringify(utterance)}\n`);
+  joiner.add(userId, { text: transcript, pcm: sttPcm, at, from });
 }
 
 function listen(receiver) {
@@ -244,7 +264,7 @@ const server = new McpServer(
   { name: 'discord', version: '0.1.0' },
   {
     capabilities: { logging: {}, experimental: { 'claude/channel': {} } },
-    instructions: 'Utterances arrive as <channel source="discord"> events. Reply with discord_speak, or make no tool call when quiet. Never call discord_listen while they arrive. tone says how it was said versus that speaker\'s usual; use it, never quote it.',
+    instructions: 'Utterances arrive as <channel source="discord"> events. The [tone] before each text says how it was said versus that speaker\'s usual. Reply with discord_speak, or make no tool call when quiet. Never call discord_listen while they arrive. Use tone; never quote it.',
   },
 );
 
