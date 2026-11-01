@@ -21,7 +21,7 @@ const system = process.env.CJ_SYSTEM ?? [
   'Use the room\'s own words and register. Pick up and riff on jokes or phrases the room has already used; plant nothing new for later.',
   'If something is new or unclear to you, ask a short question instead of pretending to know it. Playful exaggeration is fine; claim no real facts you cannot know.',
   'Think privately inside (brackets) if you need to; brackets are never spoken.',
-  'Most lines are not for you, and transcripts are often wrong: skip a line only when it is truly not for you or truly unclear.',
+  'Most lines are not for you: skip a line only when it is truly not for you or truly unclear. When a word looks odd, work out what was probably said from the words around it and from words that sound alike, and respond to that meaning.',
   `Answer people who reply to you. Otherwise reply with exactly ${quiet} when you have nothing worth saying.`,
 ].join('\n');
 
@@ -36,11 +36,25 @@ const candidateFormat = (count) => [
 const stopWords = new Set('a an the and or but of to in on at for with is are was were be it its this that i you he she we they me my your so just do does did not no yeah oh um uh like'.split(' '));
 const contentWords = (text) => (text.toLowerCase().match(/[a-z0-9']+/g) ?? []).filter((w) => !stopWords.has(w));
 
+// Spelling similarity of two words, 0..1: one minus edit distance over the longer word. An adjacent swap counts as one edit.
+const similarity = (a, b) => {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return 1 - d[a.length][b.length] / Math.max(a.length, b.length);
+};
+// A word counts as heard when a line word matches it exactly or sounds close enough to be the same word.
+const heardIn = (word, lineWords) => [...lineWords].some((w) => w === word || (word.length > 3 && w.length > 3 && similarity(word, w) >= 0.8));
+
 // Picks the candidate whose quote is literally in the latest room line and longest, so the
 // reply is anchored to what was just said. Lexical choice only: the model is never asked to judge.
 const stripBrackets = (text) => cleanText(text.replace(/\([^)]*\)/g, ' ')).replace(/^["']|["']$/g, '');
 const pickCandidate = (raw, latest, addressed = false) => {
-  const latestLower = latest.toLowerCase();
   const pairs = [...raw.matchAll(/QUOTE:\s*(.+?)\s*\n\s*SAY:\s*(.+)/gi)].map((m) => ({ quote: cleanText(m[1]).replace(/^["']|["']$/g, ''), say: stripBrackets(m[2]) }));
   // Someone talking to us directly gets an answer, with no grounding filter.
   if (addressed) {
@@ -53,8 +67,8 @@ const pickCandidate = (raw, latest, addressed = false) => {
   const latestWords = new Set(contentWords(latest));
   const grounded = pairs.filter((p) => p.quote && p.say && !p.say.startsWith(quiet)
     && contentWords(p.quote).length >= 2
-    && latestLower.includes(p.quote.toLowerCase())
-    && contentWords(p.say).some((w) => latestWords.has(w)));
+    && contentWords(p.quote).filter((w) => heardIn(w, latestWords)).length >= Math.ceil(contentWords(p.quote).length * 0.7)
+    && contentWords(p.say).some((w) => heardIn(w, latestWords)));
   if (!grounded.length) return null;
   return grounded.reduce((best, p) => (contentWords(p.quote).length > contentWords(best.quote).length ? p : best)).say;
 };

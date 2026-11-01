@@ -158,9 +158,9 @@ async function onSpeechEnd(userId, stereo) {
   const utterance = { seq: ++state.seq, at, from, text: transcript };
   state.heard.push(utterance);
   if (state.heard.length > heardKeep) state.heard.shift();
-  await appendFile(heardPath, `${JSON.stringify(utterance)}\n`);
   wakeListeners(utterance);
   notifyHeard(utterance);
+  await appendFile(heardPath, `${JSON.stringify(utterance)}\n`);
 }
 
 function listen(receiver) {
