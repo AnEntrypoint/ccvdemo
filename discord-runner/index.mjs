@@ -139,9 +139,8 @@ function notifyHeard(utterance) {
 
 async function onSpeechEnd(userId, stereo) {
   const at = Date.now();
-  const user = await client.users.fetch(userId).catch(() => null);
+  const [user, voiced] = await Promise.all([client.users.fetch(userId).catch(() => null), denoise(toMono48(stereo))]);
   const from = user?.username ?? userId;
-  const voiced = await denoise(toMono48(stereo));
   if (!voiced) {
     log(`[${from}] dropped: no speech (RNNoise VAD)`);
     return;
@@ -194,7 +193,6 @@ function speak(spoken) {
       pending = sentences.next();
       const pcm = toPlaybackPcm(value);
       player.play(createAudioResource(Readable.from([Buffer.from(pcm.buffer)]), { inputType: StreamType.Raw }));
-      await entersState(player, AudioPlayerStatus.Playing, 5000).catch(() => {});
       await entersState(player, AudioPlayerStatus.Idle, 120000).catch(() => {});
     }
   });
