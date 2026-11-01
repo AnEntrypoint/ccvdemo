@@ -156,7 +156,9 @@ function feed(payload) {
   carry = usable < joined.length ? joined.slice(usable) : new Int16Array(0)
 
   for (let off = 0; off < usable; off += DENOISE_FRAME) {
-    const { pcm, vad } = denoiser.processFrames(joined.subarray(off, off + DENOISE_FRAME))
+    // RNNoise only decides voice; the utterance keeps the raw frame, which transcribes better on noisy speech.
+    const frame = joined.subarray(off, off + DENOISE_FRAME)
+    const { pcm, vad } = denoiser.processFrames(frame)
     const voiced = vad[0] >= vadThreshold && rmsOf(pcm) >= vadRms
     if (!speaking) {
       if (!voiced) continue
@@ -165,7 +167,7 @@ function feed(payload) {
       silentMs = 0
       utterance = []
     }
-    utterance.push(pcm)
+    utterance.push(frame.slice())
     if (voiced) {
       voicedMs += FRAME_MS
       silentMs = 0
