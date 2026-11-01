@@ -163,6 +163,9 @@ const joinPcm = (pieces) => {
 function publishUtterance(userId, parts) {
   const text = parts.map((p) => p.text).join(' ');
   const acoustics = prosody(joinPcm(parts.map((p) => p.pcm)));
+  // Cadence: words in the transcript over the speech span. Too short to time, it stays null.
+  const words = (text.match(/[A-Za-z0-9']+/g) ?? []).length;
+  acoustics.wordsPerSec = acoustics.speechMs >= 600 && words >= 2 ? Number((words / (acoustics.speechMs / 1000)).toFixed(2)) : null;
   const past = toneHistory.get(userId) ?? [];
   const tone = toneWords(acoustics, past);
   toneHistory.set(userId, [...past, acoustics].slice(-TONE_HISTORY));
