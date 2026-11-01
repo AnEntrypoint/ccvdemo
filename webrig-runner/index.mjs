@@ -22,6 +22,7 @@ import { loadStt, transcribePcm16k } from 'ccv/src/stt.mjs'
 import { loadParadee, synthesize } from 'ccv/src/tts.mjs'
 import { modelDir } from 'ccv/src/install.mjs'
 import { createDenoiser, DENOISE_FRAME } from 'ccv/src/denoise.mjs'
+import { prosody } from 'ccv/src/prosody.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.dirname(here)
@@ -105,15 +106,15 @@ let speaking = false
 let lastAudioAt = 0
 let sttChain = Promise.resolve()
 
-function queueUtterance(pcm16k, at) {
+function queueUtterance(pcm16k, at, acoustics) {
   const run = sttChain.then(async () => {
     try {
       const text = (await transcribePcm16k(stt, pcm16k)).trim()
       if (text) log(`heard: ${text}`)
-      await appendFile(heardPath, `${JSON.stringify({ from: speaker, text, at })}\n`)
+      await appendFile(heardPath, `${JSON.stringify({ from: speaker, text, at, prosody: acoustics })}\n`)
     } catch (err) {
       log(`transcribe failed: ${err.message}`)
-      await appendFile(heardPath, `${JSON.stringify({ from: speaker, text: '', at })}\n`).catch(() => {})
+      await appendFile(heardPath, `${JSON.stringify({ from: speaker, text: '', at, prosody: acoustics })}\n`).catch(() => {})
     }
   })
   sttChain = run.catch(() => {})
@@ -134,7 +135,8 @@ function finishUtterance(reason) {
   const at = Date.now()
   log(`utterance end (${reason}, ${voiced} ms voiced, ${Math.round((pcm.length / SAMPLE_RATE) * 1000)} ms captured)`)
   appendFile(heardPath, `${JSON.stringify({ event: 'speechend', from: speaker, at })}\n`).catch(() => {})
-  queueUtterance(toSttPcm(pcm), at)
+  const sttPcm = toSttPcm(pcm)
+  queueUtterance(sttPcm, at, prosody(sttPcm))
 }
 
 function resetCapture() {

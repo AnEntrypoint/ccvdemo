@@ -18,6 +18,7 @@ import { loadStt, transcribePcm16k } from 'ccv/src/stt.mjs';
 import { loadParadee, synthesizeStream } from 'ccv/src/tts.mjs';
 import { modelDir } from 'ccv/src/install.mjs';
 import { createDenoiser } from 'ccv/src/denoise.mjs';
+import { prosody, describeProsody } from 'ccv/src/prosody.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -140,7 +141,7 @@ function handOut(utterance) {
 function notifyHeard(utterance) {
   server.server.notification({
     method: 'notifications/claude/channel',
-    params: { content: utterance.text, meta: { from: utterance.from, at: String(utterance.at) } },
+    params: { content: utterance.text, meta: { from: utterance.from, at: String(utterance.at), prosody: describeProsody(utterance.prosody) } },
   }).catch((err) => log(`channel notify failed: ${err.message}`));
 }
 
@@ -152,10 +153,13 @@ async function onSpeechEnd(userId, stereo) {
     log(`[${from}] dropped: no speech (RNNoise VAD)`);
     return;
   }
-  const transcript = (await transcribe(toSttPcm(voiced))).trim();
+  const sttPcm = toSttPcm(voiced);
+  const pendingTranscript = transcribe(sttPcm);
+  const acoustics = prosody(sttPcm);
+  const transcript = (await pendingTranscript).trim();
   if (!transcript) return;
   log(`[${from}] heard: ${transcript}`);
-  const utterance = { seq: ++state.seq, at, from, text: transcript };
+  const utterance = { seq: ++state.seq, at, from, text: transcript, prosody: acoustics };
   state.heard.push(utterance);
   if (state.heard.length > heardKeep) state.heard.shift();
   wakeListeners(utterance);
@@ -235,7 +239,7 @@ const server = new McpServer(
   { name: 'discord', version: '0.1.0' },
   {
     capabilities: { logging: {}, experimental: { 'claude/channel': {} } },
-    instructions: 'Utterances arrive as <channel source="discord"> events. Reply with discord_speak, or make no tool call when quiet. Never call discord_listen while channel events arrive; it is only for sessions where none arrive, and blocks until someone speaks.',
+    instructions: 'Utterances arrive as <channel source="discord"> events. Reply with discord_speak, or make no tool call when quiet. Never call discord_listen while channel events arrive; it is only for sessions where none arrive, and blocks until someone speaks. Each event\'s prosody attribute gives loudness, pitch, pitch spread and voiced share for tone; never quote it.',
   },
 );
 
