@@ -43,6 +43,8 @@ const textResult = (message) => ({ content: [{ type: 'text', text: message }] })
 
 const state = { status: problem ? 'error' : 'starting', error: problem, heard: [], seq: 0, models: 'loading' };
 const listeners = new Set();
+// Last seq that discord_listen handed out; a caller's stale afterSeq can never replay an utterance at or below it.
+let listenedSeq = 0;
 let stt = null;
 let tts = null;
 
@@ -122,11 +124,16 @@ let player = null;
 const listening = new Set();
 let decodeErrorLogged = false;
 
-// Hands an utterance to every waiting discord_listen call; one that asked for a newer cursor stays waiting.
+// Hands an utterance to the first waiting discord_listen call behind it. The handout moves listenedSeq past it, so the rest keep waiting.
 function wakeListeners(utterance) {
   for (const listener of listeners) {
-    if (utterance.seq > listener.afterSeq) listener.deliver(utterance);
+    if (utterance.seq > listener.afterSeq && utterance.seq > listenedSeq) listener.deliver(utterance);
   }
+}
+
+function handOut(utterance) {
+  listenedSeq = utterance.seq;
+  return textResult(JSON.stringify(utterance));
 }
 
 // Pushes an utterance into the Claude session as a channel event. Clients without the channel flag ignore it.
@@ -228,7 +235,7 @@ const server = new McpServer(
   { name: 'discord', version: '0.1.0' },
   {
     capabilities: { logging: {}, experimental: { 'claude/channel': {} } },
-    instructions: 'Utterances arrive as <channel source="discord">. Reply with discord_speak. If none arrive, call discord_listen, which blocks until someone speaks.',
+    instructions: 'Utterances arrive as <channel source="discord"> events. Reply with discord_speak, or make no tool call when quiet. Never call discord_listen while channel events arrive; it is only for sessions where none arrive, and blocks until someone speaks.',
   },
 );
 
@@ -261,20 +268,20 @@ server.registerTool('discord_heard', {
   inputSchema: { since: z.number().optional().describe('only seq above this') },
 }, async ({ since = 0 }) => textResult(JSON.stringify(state.heard.filter((u) => u.seq > since), null, 2)));
 
-// For sessions that never registered the channel handler: the call blocks until someone speaks.
+// Fallback for sessions that receive no channel events. Each utterance is handed out once.
 server.registerTool('discord_listen', {
-  description: 'Block until the next utterance, or {"timeout":true} after timeoutMs. Call again after each reply, passing afterSeq.',
+  description: 'Fallback for sessions with no channel events: block until the next utterance, return it once, or {"timeout":true} after timeoutMs. Call again after each reply.',
   inputSchema: {
-    afterSeq: z.number().optional().describe('last seq you handled; only newer utterances return'),
+    afterSeq: z.number().optional().describe('seq you last handled; older or already returned ones are skipped'),
     timeoutMs: z.number().optional().describe('ms; default 30000, max 300000'),
   },
 }, async ({ afterSeq, timeoutMs = 30000 }, extra) => {
-  const cursor = afterSeq ?? state.seq;
+  const cursor = afterSeq === undefined ? (listenedSeq || state.seq) : Math.max(afterSeq, listenedSeq);
   const waiting = state.heard.find((u) => u.seq > cursor);
-  if (waiting) return textResult(JSON.stringify(waiting));
+  if (waiting) return handOut(waiting);
   return new Promise((resolve) => {
     const give = Math.min(Math.max(timeoutMs, 1000), 300000);
-    const listener = { afterSeq: cursor, deliver: (u) => { finish(); resolve(textResult(JSON.stringify(u))); } };
+    const listener = { afterSeq: cursor, deliver: (u) => { finish(); resolve(handOut(u)); } };
     const timer = setTimeout(() => {
       finish();
       resolve(textResult(JSON.stringify({ timeout: true, afterSeq: cursor, newestSeq: state.seq })));
