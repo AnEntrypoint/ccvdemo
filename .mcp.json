@@ -2,7 +2,24 @@
   "mcpServers": {
     "ccv": {
       "command": "npx",
-      "args": ["-y", "github:AnEntrypoint/ccv"]
+      "args": [
+        "-y",
+        "github:AnEntrypoint/ccv"
+      ]
+    },
+    "gm": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/config/.gm-tools/gm-mcp-server.mjs"
+      ]
+    },
+    "discord": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "discord-runner/index.mjs"
+      ]
     }
   }
 }

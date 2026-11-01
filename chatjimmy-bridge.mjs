@@ -12,25 +12,26 @@ const home = process.env.CCV_HOME ?? path.join(path.dirname(new URL(import.meta.
 const heardPath = path.join(home, 'heard.jsonl');
 const hostUrl = process.env.CCV_HOST_URL ?? 'http://127.0.0.1:8800';
 const pollMs = 250;
-const silenceMs = Number(process.env.CJ_SILENCE_MS ?? 3000);
+const silenceMs = Number(process.env.CJ_SILENCE_MS ?? 0);
 const tailMs = 2000;
-const historyBudgetChars = Number(process.env.CJ_HISTORY_CHARS ?? 1500);
+const historyBudgetChars = Number(process.env.CJ_HISTORY_CHARS ?? 2500);
 const quiet = '...';
 const name = process.env.CJ_NAME ?? 'Jenny';
 const system = process.env.CJ_SYSTEM ?? [
-  `You are ${name}, an improv performer in a voice chat.`,
-  'Play yes, and: accept what the room just said as true and add one new detail on top of it. Never contradict, correct, dismiss, or quiz them.',
-  'Respond to the line just said, in its own words. Each reply stands alone: no setups, no promises, no callbacks to earlier lines.',
-  'This is a group conversation. Most lines are not aimed at you.',
-  'Transcripts are unreliable. If a line is unclear, stay quiet rather than building on one odd word.',
-  `Silence is the default. When in doubt, reply with exactly ${quiet}.`,
+  `You are ${name}, a playful, edgy improv performer in a voice chat. Hilarious is the goal; relevant is the constituent: every line must relate to what was just said, and the aim is to make it funny. Accept what was said as true, then add one new detail with a bit of bite. Never contradict or correct them.`,
+  'Use the room\'s own words and register. Pick up and riff on jokes or phrases the room has already used; plant nothing new for later.',
+  'If something is new or unclear to you, ask a short question instead of pretending to know it. Playful exaggeration is fine; claim no real facts you cannot know.',
+  'Think privately inside (brackets) if you need to; brackets are never spoken.',
+  'Most lines are not for you, and transcripts are often wrong: skip a line only when it is truly not for you or truly unclear.',
+  `Answer people who reply to you. Otherwise reply with exactly ${quiet} when you have nothing worth saying.`,
 ].join('\n');
 
-const candidateFormat = [
-  'Write 5 candidate replies in exactly this format, one pair per candidate:',
+// Three candidates normally; five when someone is talking to us, to give the pick more to choose from.
+const candidateFormat = (count) => [
+  `${count} candidates, exactly this format:`,
   'QUOTE: <2 to 5 words copied exactly from the latest Room line>',
-  'SAY: <one spoken sentence under 15 words that plays yes, and on the QUOTE>',
-  `If nothing you could say is both relevant and funny, write only: SAY: ${quiet}`,
+  'SAY: <one spoken sentence under 15 words>',
+  `Or SAY: ${quiet} if none would land.`,
 ].join('\n');
 
 const stopWords = new Set('a an the and or but of to in on at for with is are was were be it its this that i you he she we they me my your so just do does did not no yeah oh um uh like'.split(' '));
@@ -38,9 +39,18 @@ const contentWords = (text) => (text.toLowerCase().match(/[a-z0-9']+/g) ?? []).f
 
 // Picks the candidate whose quote is literally in the latest room line and longest, so the
 // reply is anchored to what was just said. Lexical choice only: the model is never asked to judge.
-const pickCandidate = (raw, latest) => {
+const stripBrackets = (text) => cleanText(text.replace(/\([^)]*\)/g, ' ')).replace(/^["']|["']$/g, '');
+const pickCandidate = (raw, latest, addressed = false) => {
   const latestLower = latest.toLowerCase();
-  const pairs = [...raw.matchAll(/QUOTE:\s*(.+?)\s*\n\s*SAY:\s*(.+)/gi)].map((m) => ({ quote: cleanText(m[1]).replace(/^["']|["']$/g, ''), say: cleanText(m[2]).replace(/^["']|["']$/g, '') }));
+  const pairs = [...raw.matchAll(/QUOTE:\s*(.+?)\s*\n\s*SAY:\s*(.+)/gi)].map((m) => ({ quote: cleanText(m[1]).replace(/^["']|["']$/g, ''), say: stripBrackets(m[2]) }));
+  // Someone talking to us directly gets an answer, with no grounding filter.
+  if (addressed) {
+    // Prefer an answer that reuses a word from what was just said; otherwise take the first real answer.
+    const referents = new Set(contentWords(latest));
+    const real = pairs.filter((p) => p.say && !p.say.startsWith(quiet) && contentWords(p.say).length >= 1);
+    const answer = real.find((p) => contentWords(p.say).some((w) => referents.has(w))) ?? real[0];
+    return answer?.say ?? null;
+  }
   const latestWords = new Set(contentWords(latest));
   const grounded = pairs.filter((p) => p.quote && p.say && !p.say.startsWith(quiet)
     && contentWords(p.quote).length >= 2
@@ -63,10 +73,16 @@ const trimTranscript = () => {
   while (transcript.length > 2 && transcriptChars() > historyBudgetChars) transcript.shift();
 };
 
+// The playback echo window only matters when our own speaker can reach our mic (the LiveKit room).
+// Discord does not send a bot its own audio, so its runner turns the window off.
+const echoWindow = process.env.CJ_ECHO_WINDOW !== '0';
 let speakingUntil = 0;
 let lastReply = '';
+let lastSpokeAt = 0;
+// A room reply within this window is an answer to us, even without our name or a "you".
+const replyWindowMs = 30000;
 const isEcho = (text) => {
-  if (Date.now() < speakingUntil) return true;
+  if (echoWindow && Date.now() < speakingUntil) return true;
   const heardWords = words(text);
   const replyWords = words(lastReply);
   if (!heardWords.size || !replyWords.size) return false;
@@ -83,17 +99,20 @@ const speak = async (text) => {
   speakingUntil = Date.now() + tailMs;
 };
 
-const promptFor = (fresh) => {
+// Someone is talking to us when they say our name, or ask a question that includes "you".
+const questionWords = /\b(what|why|how|who|where|when|do|does|did|are|is|can|could|would|will)\b/i;
+const isAddressed = (text) => new RegExp(`\\b${name}\\b`, 'i').test(text) || (/\byou\b/i.test(text) && questionWords.test(text));
+
+const promptFor = (fresh, addressed) => {
   const before = transcript.map((l) => `${l.who}: ${l.text}`).join('\n');
   const now = fresh.map((u) => `Room: ${u.text}`).join('\n');
   const lastSaid = transcript.findLast((l) => l.who === name && l.text !== quiet);
-  const followUp = lastSaid ? `You last said: "${lastSaid.text}". Work out whether the room's new lines answer it, and build on any answer.` : '';
   return [
     before && `Conversation so far:\n${before}`,
-    followUp,
-    `New from the room:\n${now}`,
-    candidateFormat,
-    `Silence is the default: if none of the candidates would land, write only SAY: ${quiet}.`,
+    `Latest from the room:\n${now}`,
+    lastSaid && `You last said: "${lastSaid.text}"`,
+    addressed && `They are talking to you: answer them.`,
+    candidateFormat(addressed ? 5 : 3),
   ].filter(Boolean).join('\n\n');
 };
 
@@ -105,7 +124,7 @@ let busy = false;
 // Speech that ended but whose transcript has not arrived yet. Holds the reply briefly so the
 // transcript lands in the same batch. Entries expire so a silent (empty) transcript cannot block forever.
 const pendingStt = [];
-const sttGraceMs = 6000;
+const sttGraceMs = 2000;
 const hasPendingStt = () => {
   const cutoff = Date.now() - sttGraceMs;
   while (pendingStt.length && pendingStt[0] < cutoff) pendingStt.shift();
@@ -115,7 +134,7 @@ const hasPendingStt = () => {
 const respond = async () => {
   if (busy || !batch.length) return;
   if (hasPendingStt()) {
-    schedule(1000);
+    schedule(250);
     return;
   }
   busy = true;
@@ -130,9 +149,10 @@ const respond = async () => {
     }
     for (const u of fresh) transcript.push({ who: 'Room', text: u.text });
     trimTranscript();
-    const result = await client.chat({ model, messages: [{ role: 'user', content: promptFor(fresh) }], systemPrompt: system });
     const latest = fresh.map((u) => u.text).join(' ');
-    let reply = pickCandidate(result.text, latest) ?? quiet;
+    const addressed = isAddressed(latest) || Date.now() - lastSpokeAt < replyWindowMs;
+    const result = await client.chat({ model, messages: [{ role: 'user', content: promptFor(fresh, addressed) }], systemPrompt: system });
+    let reply = pickCandidate(result.text, latest, addressed) ?? quiet;
     if (reply.length < 3 || reply.startsWith(quiet)) reply = quiet;
     transcript.push({ who: name, text: reply });
     trimTranscript();
@@ -141,6 +161,7 @@ const respond = async () => {
     } else {
       console.log(`reply: ${reply}`);
       lastReply = reply;
+      lastSpokeAt = Date.now();
       await speak(reply);
     }
   } catch (err) {
@@ -177,8 +198,8 @@ const poll = async () => {
         schedule();
         continue;
       }
-      if (!entry.text) continue;
       if (pendingStt.length) pendingStt.shift();
+      if (!entry.text) continue;
       if (isEcho(entry.text)) {
         console.log(`dropped echo: ${entry.text}`);
         continue;

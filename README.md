@@ -10,6 +10,10 @@ Example Claude Code project that uses [ccv](https://github.com/AnEntrypoint/ccv)
 
 Models and LiveKit install into `.ccv/` in this directory (git-ignored).
 
+## Discord
+
+Set `DISCORD_TOKEN` and `DISCORD_CHANNEL` (a voice channel URL or ID) in `.env`, then start Claude Code from this directory with `claude --dangerously-load-development-channels server:discord`. Claude Code launches the `discord` MCP server from `.mcp.json`, which joins the voice channel, transcribes speech with ccv's models, and delivers each utterance to the session. Replies go out with `discord_speak`. Without the flag, call `discord_listen` to wait for speech.
+
 ## WebRig runner
 
 `webrig-runner/` is the Discord-free counterpart of `discord-runner/`. Instead of joining a

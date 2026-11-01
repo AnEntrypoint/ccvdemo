@@ -9,6 +9,10 @@ This project runs the ccv voice stack through its MCP server.
 - If speech does not arrive, call `voice_listen`: it blocks until the user next speaks, so the session is woken without polling. Pass back the `seq` you handled as `afterSeq` on the next call.
 - `voice_heard` lists what was said; check `voice_status` if anything is not working.
 
+## Discord
+
+`discord-runner/index.mjs` is the `discord` MCP server in `.mcp.json`. Claude Code starts it; it joins `DISCORD_CHANNEL` with `DISCORD_TOKEN` at launch, transcribes each utterance with ccv's STT, and writes it to `.discord/heard.jsonl`. Utterances arrive as `<channel source="discord" ...>` when Claude Code was started with `--dangerously-load-development-channels server:discord`; otherwise call `discord_listen`, which blocks until someone speaks. Reply with `discord_speak`, which plays through ccv's TTS into the voice channel. `discord_heard` lists recent utterances and `discord_status` shows the connection and the last error. Nothing on this path uses the chatjimmy bridge.
+
 ## WebRig runner
 
 `webrig-runner/index.mjs` replaces the Discord voice connection with WebRig's audio WebSocket. It
