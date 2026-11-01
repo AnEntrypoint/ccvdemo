@@ -230,12 +230,12 @@ const server = new McpServer(
   { name: 'discord', version: '0.1.0' },
   {
     capabilities: { logging: {}, experimental: { 'claude/channel': {} } },
-    instructions: 'Discord voice utterances arrive as <channel source="discord" from="..." at="..."> and are spoken by people in the Discord voice channel. Reply with discord_speak. If they never arrive, the session was started without --dangerously-load-development-channels server:discord; call discord_listen instead, which blocks until someone speaks.',
+    instructions: 'Utterances arrive as <channel source="discord">. Reply with discord_speak. If none arrive, call discord_listen, which blocks until someone speaks.',
   },
 );
 
 server.registerTool('discord_status', {
-  description: 'Discord connection state, the voice channel, speech model state, and the last error.',
+  description: 'Connection state, voice channel, speech model state, last error.',
   inputSchema: {},
 }, async () => textResult(JSON.stringify({
   status: state.status,
@@ -246,7 +246,7 @@ server.registerTool('discord_status', {
 }, null, 2)));
 
 server.registerTool('discord_speak', {
-  description: 'Say text in the Discord voice channel. Long text plays sentence by sentence. Returns when playback ends.',
+  description: 'Speak text in the Discord voice channel. Returns when playback ends.',
   inputSchema: { text: z.string().min(1) },
 }, async ({ text: spoken }) => {
   if (!player) return textResult('not in a Discord voice channel yet; check discord_status');
@@ -259,16 +259,16 @@ server.registerTool('discord_speak', {
 });
 
 server.registerTool('discord_heard', {
-  description: 'Recent utterances from the Discord voice channel, oldest first.',
-  inputSchema: { since: z.number().optional().describe('only utterances with a seq above this') },
+  description: 'Recent utterances, oldest first.',
+  inputSchema: { since: z.number().optional().describe('only seq above this') },
 }, async ({ since = 0 }) => textResult(JSON.stringify(state.heard.filter((u) => u.seq > since), null, 2)));
 
 // For sessions that never registered the channel handler: the call blocks until someone speaks.
 server.registerTool('discord_listen', {
-  description: 'Wait for the next utterance in the Discord voice channel and return it, or {"timeout":true} after timeoutMs. Call it again after each reply, passing back afterSeq, to keep listening.',
+  description: 'Block until the next utterance, or {"timeout":true} after timeoutMs. Call again after each reply, passing afterSeq.',
   inputSchema: {
-    afterSeq: z.number().optional().describe('the seq of the last utterance you handled; only newer ones are returned'),
-    timeoutMs: z.number().optional().describe('give up after this long in ms (default 30000, max 300000)'),
+    afterSeq: z.number().optional().describe('last seq you handled; only newer utterances return'),
+    timeoutMs: z.number().optional().describe('ms; default 30000, max 300000'),
   },
 }, async ({ afterSeq, timeoutMs = 30000 }, extra) => {
   const cursor = afterSeq ?? state.seq;
