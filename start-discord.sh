@@ -17,6 +17,13 @@ env_value() {
 [ -n "${DISCORD_CHANNEL:-}" ] || [ -n "$(env_value DISCORD_CHANNEL)" ] \
   || { echo "start-discord: DISCORD_CHANNEL is not set in the environment or .env" >&2; exit 1; }
 
+engine="${TTS:-$(env_value TTS)}"
+if [ "${engine:-paradee}" = chatterbox ]; then
+  chatterbox_url="${CHATTERBOX_URL:-$(env_value CHATTERBOX_URL)}"
+  chatterbox_url="${chatterbox_url:-http://127.0.0.1:8765}"
+  node -e "fetch(process.argv[1], { signal: AbortSignal.timeout(3000) }).then(() => process.exit(0), () => process.exit(1))" "$chatterbox_url" \
+    || { echo "start-discord: TTS=chatterbox but nothing answers at $chatterbox_url. Start the server first (cd nano_fast && python serve.py --port 8765), or unset TTS to use paradee." >&2; exit 1; }
+fi
 if [ ! -d discord-runner/node_modules/discord.js ] || [ ! -d discord-runner/node_modules/ccv ]; then
   (cd discord-runner && npm install)
 fi
