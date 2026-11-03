@@ -7,7 +7,7 @@
     "start": "node index.mjs"
   },
   "dependencies": {
-    "ccv": "github:AnEntrypoint/ccv"
+    "ccv": "github:AnEntrypoint/ccv#2c3377d3a21d697f88a55c47a73df0008d2607ab"
   },
   "engines": {
     "node": ">=22"

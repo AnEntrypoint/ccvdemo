@@ -15,7 +15,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { loadDotEnv } from 'ccv/src/env.mjs';
 import { loadStt, transcribePcm16k } from 'ccv/src/stt.mjs';
-import { loadParadee, synthesizeStream } from 'ccv/src/tts.mjs';
+import { loadTts, probeChatterbox, chatterboxUrl, synthesizeStream } from 'ccv/src/tts.mjs';
 import { modelDir } from 'ccv/src/install.mjs';
 import { createDenoiser } from 'ccv/src/denoise.mjs';
 import { prosody, toneWords } from 'ccv/src/prosody.mjs';
@@ -30,6 +30,7 @@ const channelUrl = process.env.DISCORD_CHANNEL ?? '';
 const [, guildId, channelId] = channelUrl.match(/channels\/(\d+)\/(\d+)/) ?? [];
 const voiceChannelId = channelId ?? channelUrl.split('/').pop();
 const ccvHome = process.env.CCV_HOME ?? path.join(root, '.ccv');
+const ttsEngine = process.env.TTS || 'paradee';
 const discordHome = process.env.DISCORD_HOME ?? path.join(root, '.discord');
 const heardPath = path.join(discordHome, 'heard.jsonl');
 // Silence that ends an utterance. Lower than the old 800 ms default: raise it if sentences get cut at pauses.
@@ -47,19 +48,32 @@ await mkdir(discordHome, { recursive: true });
 const log = (line) => console.error(`${new Date().toISOString()} discord: ${line}`);
 const textResult = (message) => ({ content: [{ type: 'text', text: message }] });
 
-const state = { status: problem ? 'error' : 'starting', error: problem, heard: [], seq: 0, models: 'loading' };
+const state = { status: problem ? 'error' : 'starting', error: problem, heard: [], seq: 0, models: 'loading', tts: ttsEngine };
 const listeners = new Set();
 // Last seq that discord_listen handed out; a caller's stale afterSeq can never replay an utterance at or below it.
 let listenedSeq = 0;
 let stt = null;
 let tts = null;
 
-const modelsLoaded = Promise.all([loadStt(modelDir(ccvHome, 'stt')), loadParadee(modelDir(ccvHome, 'tts'))])
-  .then(([s, t]) => {
+const loadSpeech = async () => {
+  const dir = modelDir(ccvHome, 'tts');
+  if (ttsEngine !== 'chatterbox') return { engine: ttsEngine, model: await loadTts(dir, ttsEngine) };
+  try {
+    await probeChatterbox();
+    return { engine: 'chatterbox', model: await loadTts(dir, 'chatterbox') };
+  } catch (err) {
+    log(`chatterbox at ${chatterboxUrl()} did not answer (${err.cause?.code ?? err.message}); speaking with paradee`);
+    return { engine: 'paradee', model: await loadTts(dir, 'paradee') };
+  }
+};
+
+const modelsLoaded = Promise.all([loadStt(modelDir(ccvHome, 'stt')), loadSpeech()])
+  .then(([s, speech]) => {
     stt = s;
-    tts = t;
+    tts = speech.model;
+    state.tts = speech.engine;
     state.models = 'ready';
-    log('speech models loaded');
+    log(`speech models loaded (tts: ${speech.engine})`);
   })
   .catch((err) => {
     state.models = 'failed';
@@ -280,6 +294,7 @@ server.registerTool('discord_status', {
   error: state.error,
   channel: voiceChannelId,
   models: state.models,
+  tts: state.tts,
   utterances: state.seq,
 }, null, 2)));
 

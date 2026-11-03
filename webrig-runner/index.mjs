@@ -19,7 +19,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadDotEnv } from 'ccv/src/env.mjs'
 import { loadStt, transcribePcm16k } from 'ccv/src/stt.mjs'
-import { loadParadee, synthesize } from 'ccv/src/tts.mjs'
+import { loadTts, probeChatterbox, chatterboxUrl, synthesize } from 'ccv/src/tts.mjs'
 import { modelDir } from 'ccv/src/install.mjs'
 import { createDenoiser, DENOISE_FRAME } from 'ccv/src/denoise.mjs'
 import { prosody } from 'ccv/src/prosody.mjs'
@@ -32,6 +32,7 @@ const wsUrl = process.env.WEBRIG_WS_URL ?? 'ws://127.0.0.1:9888'
 const speakPort = Number(process.env.WEBRIG_SPEAK_PORT ?? 8802)
 const speaker = process.env.WEBRIG_SPEAKER_NAME ?? 'webrig'
 const ccvHome = process.env.CCV_HOME ?? path.join(root, '.ccv')
+const ttsEngine = process.env.TTS || 'paradee'
 const webrigHome = process.env.WEBRIG_HOME ?? path.join(root, '.webrig')
 const heardPath = path.join(webrigHome, 'heard.jsonl')
 const endSilenceMs = Number(process.env.WEBRIG_END_SILENCE_MS ?? 700)
@@ -48,11 +49,24 @@ const AUDIO_FRAME_FLOATS = 1920
 await mkdir(webrigHome, { recursive: true })
 
 const log = (line) => console.log(`${new Date().toISOString()} [webrig-runner] ${line}`)
-const [stt, tts] = await Promise.all([
+const loadSpeech = async () => {
+  const dir = modelDir(ccvHome, 'tts')
+  if (ttsEngine !== 'chatterbox') return { engine: ttsEngine, model: await loadTts(dir, ttsEngine) }
+  try {
+    await probeChatterbox()
+    return { engine: 'chatterbox', model: await loadTts(dir, 'chatterbox') }
+  } catch (err) {
+    log(`chatterbox at ${chatterboxUrl()} did not answer (${err.cause?.code ?? err.message}); speaking with paradee`)
+    return { engine: 'paradee', model: await loadTts(dir, 'paradee') }
+  }
+}
+
+const [stt, speech] = await Promise.all([
   loadStt(modelDir(ccvHome, 'stt')),
-  loadParadee(modelDir(ccvHome, 'tts')),
+  loadSpeech(),
 ])
-log('speech models loaded')
+const tts = speech.model
+log(`speech models loaded (tts: ${speech.engine})`)
 
 const concat16 = (parts) => {
   const out = new Int16Array(parts.reduce((n, p) => n + p.length, 0))

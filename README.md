@@ -11,6 +11,10 @@ Example Claude Code project that uses [ccv](https://github.com/AnEntrypoint/ccv)
 
 Models and LiveKit install into `.ccv/` in this directory (git-ignored).
 
+## Speech output
+
+Both runners speak with ccv's TTS. `TTS=paradee` (the default) uses the Paradee model in `.ccv/models/tts`. `TTS=chatterbox` streams speech from the Chatterbox-Nano server at `CHATTERBOX_URL` (default `http://127.0.0.1:8765`). That server is `serve.py` in chatnano's `nano_fast/` (`python serve.py --port 8765`), and it must be running before the runner starts. If it does not answer at startup, the runner logs that and speaks with Paradee instead.
+
 ## Discord
 
 Set `DISCORD_TOKEN` and `DISCORD_CHANNEL` (a voice channel URL or ID) in `.env`, then start Claude Code from this directory with `claude --dangerously-load-development-channels server:discord`. Claude Code launches the `discord` MCP server from `.mcp.json`, which joins the voice channel, transcribes speech with ccv's models, and delivers each utterance to the session. Replies go out with `discord_speak`. Without the flag, call `discord_listen` to wait for speech. `./start-discord.sh` does the same launch with only the discord server loaded, built-in tools off, and only its tools allowed.
