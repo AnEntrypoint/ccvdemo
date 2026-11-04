@@ -19,6 +19,10 @@ Both runners speak with ccv's TTS. `TTS=paradee` (the default) uses the Paradee 
 
 Set `DISCORD_TOKEN` and `DISCORD_CHANNEL` (a voice channel URL or ID) in `.env`, then start Claude Code from this directory with `claude --dangerously-load-development-channels server:discord`. Claude Code launches the `discord` MCP server from `.mcp.json`, which joins the voice channel, transcribes speech with ccv's models, and delivers each utterance to the session. Replies go out with `discord_speak`. Without the flag, call `discord_listen` to wait for speech. `./start-discord.sh` does the same launch with only the discord server loaded, built-in tools off, and only its tools allowed.
 
+## Discord with chatjimmy
+
+`npm run discord:chatjimmy` (`start-discord-chatjimmy.mjs`) joins the same Discord voice channel with no Claude session. It starts `discord-runner/index.mjs` with `DISCORD_MCP=0`, so the runner has no MCP server, and it serves replies on `DISCORD_SPEAK_PORT` (default 8803, loopback only). `chatjimmy-bridge.mjs` follows `DISCORD_HOME/heard.jsonl` (default `.discord/`) and posts each reply to that endpoint. Run `npm install` in the project root and in `discord-runner/` first.
+
 ## WebRig runner
 
 `webrig-runner/` is the Discord-free counterpart of `discord-runner/`. Instead of joining a
@@ -37,3 +41,21 @@ and the voice connection.
 
 Configuration is the `WEBRIG_*` block in `.env.example`. Set `WEBRIG_BRIDGE=0` to run only the
 audio bridge without the chatjimmy responder.
+
+## Mic runner
+
+`mic-runner/` needs no Discord or WebRig. It listens to the audio this machine plays and speaks
+replies into a microphone input, so a call or meeting app that reads that microphone hears Claude.
+
+1. Run `npm install` in `mic-runner/` once (`start-mic.sh` does it when needed).
+2. Linux: create a virtual microphone once, then pick `claude_mic_in` as the microphone in the app:
+   `pactl load-module module-null-sink sink_name=claude_mic sink_properties=device.description=claude_mic`
+   `pactl load-module module-remap-source master=claude_mic.monitor source_name=claude_mic_in`
+   Then set `MIC_SPEAK=claude_mic` in `.env`. `MIC_LISTEN` picks what is heard; unset, it is the default output.
+3. Run `./start-mic.sh`. It starts Claude Code with only the `mic` server, and utterances arrive as channel
+   events. Replies go out with `mic_speak`.
+
+macOS and Windows have no per-app routing here: set `MIC_LISTEN` to a loopback device (BlackHole, Stereo Mix,
+VB-Cable), and set `MIC_PLAY_CMD` to play into the virtual microphone. `MIC_CAPTURE_CMD` replaces capture.
+The listening side closes while a reply plays, so a reply that also reaches the listened output is not
+transcribed back.

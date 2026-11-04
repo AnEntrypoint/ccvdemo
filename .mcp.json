@@ -7,13 +7,6 @@
         "github:AnEntrypoint/ccv"
       ]
     },
-    "gm": {
-      "type": "stdio",
-      "command": "node",
-      "args": [
-        "/config/.gm-tools/gm-mcp-server.mjs"
-      ]
-    },
     "discord": {
       "type": "stdio",
       "command": "node",

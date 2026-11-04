@@ -4,11 +4,11 @@
 // <DISCORD_HOME>/heard.jsonl. discord_speak synthesizes a reply with ccv's TTS and plays it into the voice channel.
 // stdout is the MCP transport, so all logging goes to stderr.
 import { appendFile, mkdir } from 'node:fs/promises';
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Readable } from 'node:stream';
 import { Client, GatewayIntentBits } from 'discord.js';
-import { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, EndBehaviorType, AudioPlayerStatus, StreamType, VoiceConnectionStatus } from '@discordjs/voice';
+import { joinVoiceChannel, createAudioPlayer, entersState, EndBehaviorType, VoiceConnectionStatus } from '@discordjs/voice';
 import prism from 'prism-media';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -20,6 +20,7 @@ import { modelDir } from 'ccv/src/install.mjs';
 import { createDenoiser } from 'ccv/src/denoise.mjs';
 import { prosody, toneWords } from 'ccv/src/prosody.mjs';
 import { createUtteranceJoiner } from './utterance-join.mjs';
+import { playReply } from './playback.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -41,6 +42,10 @@ const TONE_HISTORY = 20;
 const toneHistory = new Map();
 // How long a fragment that does not end a sentence waits for the same speaker's continuation.
 const JOIN_HOLD_MS = Number(process.env.DISCORD_JOIN_MS ?? 1000);
+// Audio queued before a reply starts playing; keeps synthesis ahead of playback so the stream does not run dry.
+const PREBUFFER_MS = Number(process.env.DISCORD_PREBUFFER_MS ?? 1000);
+const mcpMode = process.env.DISCORD_MCP !== '0';
+const speakPort = process.env.DISCORD_SPEAK_PORT ? Number(process.env.DISCORD_SPEAK_PORT) : null;
 
 const problem = !token ? 'DISCORD_TOKEN is not set' : !voiceChannelId ? 'DISCORD_CHANNEL is not set' : null;
 await mkdir(discordHome, { recursive: true });
@@ -113,20 +118,6 @@ async function hasVoice(mono48) {
   }
 }
 
-// 24 kHz mono s16 TTS -> 48 kHz stereo s16 for Discord: repeat each sample twice, duplicate to both channels.
-function toPlaybackPcm(mono24) {
-  const out = new Int16Array(mono24.length * 4);
-  for (let i = 0; i < mono24.length; i++) {
-    const a = mono24[i];
-    const b = i + 1 < mono24.length ? mono24[i + 1] : a;
-    const mid = Math.round((a + b) / 2);
-    const o = i * 4;
-    out[o] = a; out[o + 1] = a;
-    out[o + 2] = mid; out[o + 3] = mid;
-  }
-  return out;
-}
-
 let sttChain = Promise.resolve();
 const transcribe = (pcm) => {
   const run = sttChain.then(() => {
@@ -187,7 +178,7 @@ function publishUtterance(userId, parts) {
   state.heard.push(utterance);
   if (state.heard.length > heardKeep) state.heard.shift();
   wakeListeners(utterance);
-  notifyHeard(utterance);
+  if (mcpMode) notifyHeard(utterance);
   appendFile(heardPath, `${JSON.stringify(utterance)}\n`).catch((err) => log(`heard write failed: ${err.message}`));
 }
 
@@ -235,21 +226,13 @@ function listen(receiver) {
   });
 }
 
-// Plays each sentence as soon as it is synthesized; the next sentence synthesizes while the current one plays.
 let speakChain = Promise.resolve();
 function speak(spoken) {
-  const run = speakChain.then(async () => {
-    const sentences = synthesizeStream(tts, spoken)[Symbol.asyncIterator]();
-    let pending = sentences.next();
-    for (;;) {
-      const { value, done } = await pending;
-      if (done) break;
-      pending = sentences.next();
-      const pcm = toPlaybackPcm(value);
-      player.play(createAudioResource(Readable.from([Buffer.from(pcm.buffer)]), { inputType: StreamType.Raw }));
-      await entersState(player, AudioPlayerStatus.Idle, 120000).catch(() => {});
-    }
-  });
+  const run = speakChain.then(() => playReply({
+    player,
+    sentences: synthesizeStream(tts, spoken),
+    prebufferMs: PREBUFFER_MS,
+  }));
   speakChain = run.catch((err) => log(`speak failed: ${err.message}`));
   return run;
 }
@@ -348,8 +331,38 @@ server.registerTool('discord_listen', {
   });
 });
 
-await server.connect(new StdioServerTransport());
-log('discord MCP server ready');
+if (speakPort) {
+  const speakServer = http.createServer(async (req, res) => {
+    if (req.method !== 'POST' || req.url !== '/speak') {
+      res.statusCode = 404;
+      return res.end();
+    }
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    res.setHeader('content-type', 'application/json');
+    try {
+      const { text } = JSON.parse(body || '{}');
+      if (!text) {
+        res.statusCode = 400;
+        return res.end('{"error":"text required"}');
+      }
+      if (!player) {
+        res.statusCode = 503;
+        return res.end('{"error":"not in a Discord voice channel yet"}');
+      }
+      await speak(text);
+      res.end('{"ok":true}');
+    } catch (err) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: err.message }));
+    }
+  });
+  speakServer.listen(speakPort, '127.0.0.1', () => log(`speak endpoint on http://127.0.0.1:${speakPort}`));
+}
+if (mcpMode) {
+  await server.connect(new StdioServerTransport());
+  log('discord MCP server ready');
+}
 if (problem) log(problem);
 else client.login(token).catch((err) => {
   state.status = 'error';
@@ -364,4 +377,4 @@ const shutdown = () => {
 };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-process.stdin.on('end', shutdown);
+if (mcpMode) process.stdin.on('end', shutdown);

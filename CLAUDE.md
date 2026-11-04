@@ -15,6 +15,12 @@ This project runs the ccv voice stack through its MCP server.
 
 `discord-runner/index.mjs` is the `discord` MCP server in `.mcp.json`. Claude Code starts it; it joins `DISCORD_CHANNEL` with `DISCORD_TOKEN` at launch, transcribes each utterance with ccv's STT, and writes it to `.discord/heard.jsonl`. Utterances arrive as `<channel source="discord" ...>` when Claude Code was started with `--dangerously-load-development-channels server:discord`; otherwise call `discord_listen`, which blocks until someone speaks. In a channel session, never call `discord_listen`: channel events are the only delivery path there. Reply with `discord_speak`, which plays through ccv's TTS into the voice channel. `discord_heard` lists recent utterances and `discord_status` shows the connection and the last error. Nothing on this path uses the chatjimmy bridge.
 
+## Mic runner
+
+Launch with `./start-mic.sh`: it listens to this machine's output audio and speaks replies into its microphone
+input (see the README). Utterances arrive as `<channel source="mic" ...>`; reply with `mic_speak`. `mic_status`
+reports the listening and speaking devices and any error; `mic_listen` is the fallback when no channel events arrive.
+
 ## WebRig runner
 
 `webrig-runner/index.mjs` replaces the Discord voice connection with WebRig's audio WebSocket. It
