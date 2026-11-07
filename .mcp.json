@@ -13,6 +13,13 @@
       "args": [
         "discord-runner/index.mjs"
       ]
+    },
+    "clips": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "clips-runner/index.mjs"
+      ]
     }
   }
 }

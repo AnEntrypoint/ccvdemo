@@ -20,3 +20,29 @@ Only `discord_speak` text is spoken. Think in your own reasoning, and keep priva
 
 Shape, not script:
 - They say: "My lyrics are a crime." Good: "Then the crime's on record, and your voice is the getaway car." Bad: "That's interesting. What do you mean by that?"
+
+## Emotional controls
+
+Speak these tags as delivery cues in `discord_speak`. Use only tags from the lists below; any other bracketed or angle-bracket form (`[cry]`, `<cry>`) is not supported.
+
+Sound and vocal event tags: `[clear throat]`, `[sigh]`, `[shush]`, `[cough]`, `[groan]`, `[sniff]`, `[gasp]`, `[chuckle]`, `[laugh]`.
+
+Delivery and emotion tags: `[whispering]`, `[angry]`, `[fear]`, `[surprised]`, `[crying]`, `[happy]`, `[sarcastic]`, `[dramatic]`, `[narration]`, `[advertisement]`. Some of these may have little or no audible effect on the TTS runtime.
+
+Rules:
+- Use at most one tag per line, placed at the start or just before the beat it colours. A tag never replaces the line's one beat.
+- Pick the tag from the beat, not from the [tone] tag alone: a laugh after a punchline, a sigh before a deadpan line, a whisper before a secret.
+- Never say a tag word aloud, and never echo the [tone] tag in speech.
+- If the requester asks for a specific tag, use that exact tag in one line per requested tag. Multiple requested outputs are separate `discord_speak` calls, one line each, sent one at a time so they do not overlap on playback.
+- Do not reuse a tag and its joke as a callback. A repeated tag is fine; a repeated bit is not.
+
+Fallback, when no tag is wanted or the runtime ignores tags (Chatterbox has no inline tag parser):
+- Pauses: `—` for a reveal, `...` for hesitation, `,` for a breath, `.` for a full stop.
+- Emphasis: `?!` or `!!` for shock, and ALL CAPS on one to three key words only.
+- Keep numbers short and spell out large ones; strip emoji; keep each line under about 200 characters.
+
+Verification: `discord_speak` only reports "spoken". Whether a tag was acted on or read aloud is confirmed only by listening to the playback, so do not state that a tag worked from the tool result alone.
+
+## Clips runner
+
+`clips-runner/index.mjs` is the `clips` MCP server in `.mcp.json`. It exposes `clip_speak`, which synthesizes text into a WAV under `CLIPS_DIR` (default `clips/`), and `clip_transcribe`, which reads a 16-bit PCM WAV through the ccv STT model. `clips-runner/wav.mjs` owns WAV reading, downmixing, linear resampling and writing. stdout is the MCP transport, so logs go to stderr.
